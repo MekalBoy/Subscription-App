@@ -1,8 +1,3 @@
-# Protocoale de comunicatii
-# Laborator 7 - TCP
-# Echo Server
-# Makefile
-
 CFLAGS = -Wall -g -Werror -Wno-error=unused-variable
 
 # Portul pe care asculta serverul

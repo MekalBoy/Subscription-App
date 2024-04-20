@@ -8,6 +8,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,7 +88,6 @@ void run_chat_server(int listenfd) {
 }
 
 void run_chat_multi_server(int listenfd) {
-
   struct pollfd poll_fds[MAX_CONNECTIONS];
   int num_sockets = 1;
   int rc;
@@ -116,21 +116,19 @@ void run_chat_multi_server(int listenfd) {
     for (int i = 0; i < num_sockets; i++) {
       if (poll_fds[i].revents & POLLIN) {
         if (poll_fds[i].fd == listenfd) {
-          // Am primit o cerere de conexiune pe socketul de listen, pe care
-          // o acceptam
+          // Am primit o cerere de conexiune pe socketul de listen, pe care o acceptam
           struct sockaddr_in cli_addr;
           socklen_t cli_len = sizeof(cli_addr);
           const int newsockfd =
               accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
           DIE(newsockfd < 0, "accept");
 
-          // Adaugam noul socket intors de accept() la multimea descriptorilor
-          // de citire
+          // Adaugam noul socket intors de accept() la multimea descriptorilor de citire
           poll_fds[num_sockets].fd = newsockfd;
           poll_fds[num_sockets].events = POLLIN;
           num_sockets++;
 
-          printf("Noua conexiune de la %s, port %d, socket client %d\n",
+          printf("New client <id> connected from %s:%d\nsocket client %d\n",
                  inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port),
                  newsockfd);
         } else {
@@ -166,26 +164,34 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // Parsam port-ul ca un numar
   uint16_t port;
-  int rc = sscanf(argv[1], "%hu", &port);
-  DIE(rc != 1, "Given port is invalid");
+  int rc, tcpfd, udpfd;
+  int nagle;
 
-  // Obtinem un socket TCP pentru receptionarea conexiunilor
-  const int listenfd = socket(AF_INET, SOCK_STREAM, 0);
-  DIE(listenfd < 0, "socket");
+  // Parse port
+  rc = sscanf(argv[1], "%hu", &port);
+  DIE(rc != 1, "Given port is invalid.");
+
+  // Disable buffer
+  rc = setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+  DIE(rc < 0, "Could not disable buffer.");
+
+  // Create TCP socket
+  tcpfd = socket(AF_INET, SOCK_STREAM, 0);
+  DIE(tcpfd < 0, "Could not get TCP socket.");
+
+  // Create UDP socket
+  udpfd = socket(AF_INET, SOCK_DGRAM, 0);
+  DIE(tcpfd < 0, "Could not get UDP socket.");
+
+  // Disable Nagle (TCP)
+  rc = setsockopt(tcpfd, IPPROTO_TCP, TCP_NODELAY, &nagle, sizeof(nagle));
+  DIE(rc < 0, "Could not disable Nagle.");
 
   // Completăm in serv_addr adresa serverului, familia de adrese si portul
   // pentru conectare
   struct sockaddr_in serv_addr;
   socklen_t socket_len = sizeof(struct sockaddr_in);
-
-  // Facem adresa socket-ului reutilizabila, ca sa nu primim eroare in caz ca
-  // rulam de 2 ori rapid
-  // Vezi https://stackoverflow.com/questions/3229860/what-is-the-meaning-of-so-reuseaddr-setsockopt-option-linux
-  const int enable = 1;
-  if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
-    perror("setsockopt(SO_REUSEADDR) failed");
 
   memset(&serv_addr, 0, socket_len);
   serv_addr.sin_family = AF_INET;
@@ -193,18 +199,24 @@ int main(int argc, char *argv[]) {
 //   rc = inet_pton(AF_INET, argv[1], &serv_addr.sin_addr.s_addr);
 //   DIE(rc <= 0, "inet_pton");
 
-  // Asociem adresa serverului cu socketul creat folosind bind
-  rc = bind(listenfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr));
-  DIE(rc < 0, "bind");
+  // Bind TCP
+  rc = bind(tcpfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr));
+  DIE(rc < 0, "Could not bind TCP.");
+
+  // Bind UDP
+  rc = bind(udpfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr));
+  DIE(rc < 0, "Could not bind UDP.");
 
   /*
     TODO 2.1: Folositi implementarea cu multiplexare
   */
-  run_chat_server(listenfd);
-  // run_chat_multi_server(listenfd);
+  // run_chat_server(tcpfd);
+  run_chat_multi_server(tcpfd);
 
-  // Inchidem listenfd
-  close(listenfd);
+  // Inchidem fd-urile
+  // close(listenfd);
+  close(tcpfd);
+  close(udpfd);
 
   return 0;
 }
