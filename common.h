@@ -7,12 +7,21 @@
 int send_all(int sockfd, void *buff, size_t len);
 int recv_all(int sockfd, void *buff, size_t len);
 
-/* Dimensiunea maxima a mesajului */
-#define MSG_MAXSIZE 1024
+#define MSG_MAXSIZE 1500
 
 struct chat_packet {
   uint16_t len;
-  char message[MSG_MAXSIZE + 1];
+  char message[MSG_MAXSIZE];
+};
+
+struct udp_msg {
+  union udpData {
+    uint32_t INT; // type 0
+    uint16_t SHORT_REAL; // type 1
+    float FLOAT; // type 2
+    char STRING[MSG_MAXSIZE]; // type 3
+  } payload;
+  char type;
 };
 
 #endif

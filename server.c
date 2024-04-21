@@ -1,10 +1,3 @@
-/*
- * Protocoale de comunicatii
- * Laborator 7 - TCP
- * Echo Server
- * server.c
- */
-
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -21,6 +14,7 @@
 #include "helpers.h"
 
 #define MAX_CONNECTIONS 32
+#define MAX_PAYLOAD 1501
 
 // Primeste date de pe connfd1 si trimite mesajul receptionat pe connfd2
 int receive_and_send(int connfd1, int connfd2, size_t len) {
@@ -87,41 +81,51 @@ void run_chat_server(int listenfd) {
   close(connfd2);
 }
 
-void run_chat_multi_server(int listenfd) {
+void run_chat_multi_server(int tcpfd, int udpfd) {
   struct pollfd poll_fds[MAX_CONNECTIONS];
-  int num_sockets = 1;
-  int rc;
+  int num_sockets = 3; // stdin, tcp, udp to begin with
+  int rc, nagle;
+
+  char buf[1501];
 
   struct chat_packet received_packet;
 
-  // Setam socket-ul listenfd pentru ascultare
-  rc = listen(listenfd, MAX_CONNECTIONS);
-  DIE(rc < 0, "listen");
+  // Listen for TCP subscribers
+  rc = listen(tcpfd, MAX_CONNECTIONS);
+  DIE(rc < 0, "Could not listen for TCP.");
 
-  // Adaugam noul file descriptor (socketul pe care se asculta conexiuni) in
-  // multimea poll_fds
-  poll_fds[0].fd = listenfd;
+  // Solely for 'exit'
+  poll_fds[0].fd = STDIN_FILENO;
   poll_fds[0].events = POLLIN;
 
-  /*
-    TODO 3: Adaugati un timerfd. Read-ul pe el se va debloca periodic, moment
-    in care veti trimite anuntul promotional catre toti clientii.
-  */
+  poll_fds[1].fd = tcpfd;
+  poll_fds[1].events = POLLIN;
+
+  poll_fds[2].fd = udpfd;
+  poll_fds[2].events = POLLIN;
 
   while (1) {
-    // Asteptam sa primim ceva pe unul dintre cei num_sockets socketi
     rc = poll(poll_fds, num_sockets, -1);
-    DIE(rc < 0, "poll");
+    DIE(rc < 0, "Something about poll failing.");
 
     for (int i = 0; i < num_sockets; i++) {
       if (poll_fds[i].revents & POLLIN) {
-        if (poll_fds[i].fd == listenfd) {
-          // Am primit o cerere de conexiune pe socketul de listen, pe care o acceptam
+        if (poll_fds[i].fd == STDIN_FILENO) { // Probably an 'exit' command
+          fgets(buf, 5, stdin);
+
+          if (strncmp(buf, "exit", sizeof("exit") - 1) == 0) {
+            // TODO: disconnect everyone gracefully
+            return;
+          }
+        } else if (poll_fds[i].fd == tcpfd) { // TCP (new connection)
           struct sockaddr_in cli_addr;
           socklen_t cli_len = sizeof(cli_addr);
-          const int newsockfd =
-              accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
-          DIE(newsockfd < 0, "accept");
+          const int newsockfd = accept(tcpfd, (struct sockaddr *)&cli_addr, &cli_len);
+          DIE(newsockfd < 0, "Could not accept TCP connection.");
+
+          // Disable Nagle (TCP)
+          rc = setsockopt(tcpfd, IPPROTO_TCP, TCP_NODELAY, &nagle, sizeof(nagle));
+          DIE(rc < 0, "Could not disable Nagle at client.");
 
           // Adaugam noul socket intors de accept() la multimea descriptorilor de citire
           poll_fds[num_sockets].fd = newsockfd;
@@ -131,9 +135,30 @@ void run_chat_multi_server(int listenfd) {
           printf("New client <id> connected from %s:%d\nsocket client %d\n",
                  inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port),
                  newsockfd);
-        } else {
+        } else if (poll_fds[i].fd == udpfd) { // UDP (new content)
           // Am primit date pe unul din socketii de client, asa ca le receptionam
-          int rc = recv_all(poll_fds[i].fd, &received_packet,
+          rc = recv_all(poll_fds[i].fd, &received_packet,
+                            sizeof(received_packet));
+          DIE(rc < 0, "recv");
+
+          if (rc == 0) {
+            printf("Socket-ul client %d a inchis conexiunea\n", i);
+            close(poll_fds[i].fd);
+
+            // Scoatem din multimea de citire socketul inchis
+            for (int j = i; j < num_sockets - 1; j++) {
+              poll_fds[j] = poll_fds[j + 1];
+            }
+
+            num_sockets--;
+          } else {
+            printf("S-a primit de la clientul de pe socketul %d mesajul: %s\n",
+                   poll_fds[i].fd, received_packet.message);
+            /* TODO 2.1: Trimite mesajul catre toti ceilalti clienti */
+          }
+        } else { // TCP (clients)
+          // Am primit date pe unul din socketii de client, asa ca le receptionam
+          rc = recv_all(poll_fds[i].fd, &received_packet,
                             sizeof(received_packet));
           DIE(rc < 0, "recv");
 
@@ -157,6 +182,7 @@ void run_chat_multi_server(int listenfd) {
     }
   }
 }
+
 
 int main(int argc, char *argv[]) {
   if (argc != 2) {
@@ -186,7 +212,7 @@ int main(int argc, char *argv[]) {
 
   // Disable Nagle (TCP)
   rc = setsockopt(tcpfd, IPPROTO_TCP, TCP_NODELAY, &nagle, sizeof(nagle));
-  DIE(rc < 0, "Could not disable Nagle.");
+  DIE(rc < 0, "Could not disable Nagle at startup.");
 
   // Completăm in serv_addr adresa serverului, familia de adrese si portul
   // pentru conectare
@@ -207,11 +233,7 @@ int main(int argc, char *argv[]) {
   rc = bind(udpfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr));
   DIE(rc < 0, "Could not bind UDP.");
 
-  /*
-    TODO 2.1: Folositi implementarea cu multiplexare
-  */
-  // run_chat_server(tcpfd);
-  run_chat_multi_server(tcpfd);
+  run_chat_multi_server(tcpfd, udpfd);
 
   // Inchidem fd-urile
   // close(listenfd);

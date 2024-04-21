@@ -65,8 +65,7 @@ int main(int argc, char *argv[]) {
   const int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   DIE(sockfd < 0, "socket");
 
-  // Completăm in serv_addr adresa serverului, familia de adrese si portul
-  // pentru conectare
+  // Completăm in serv_addr adresa serverului, familia de adrese si portul pentru conectare
   struct sockaddr_in serv_addr;
   socklen_t socket_len = sizeof(struct sockaddr_in);
 
