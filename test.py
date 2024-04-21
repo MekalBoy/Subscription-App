@@ -341,7 +341,7 @@ def subscribe_to_topic(c, topic_name="", wildcard=""):
   """Sends subscribe command on a client"""
   c.send_input("subscribe " + topic_name + wildcard)
   outc = c.get_output_timeout(1)
-  if not outc.startswith("Subscribed to topic."):
+  if not outc.startswith("Subscribed to topic"):
     print("Error: C not subscribed to topic " + wildcard)
     return -1
 
@@ -403,7 +403,7 @@ def run_test_c1_subscribe_all(server, c1, topics):
   for topic in topics:
     c1.send_input("subscribe " + topic.name)
     outc1 = c1.get_output_timeout(1)
-    if not outc1.startswith("Subscribed to topic."):
+    if not outc1.startswith("Subscribed to topic"):
       print("Error: C1 not subscribed to all topics")
       failed = True
       break
@@ -491,7 +491,7 @@ def run_test_c2_subscribe(c2, topics):
 
   c2.send_input("subscribe " + topic.name)
   outc2 = c2.get_output_timeout(1)
-  if not outc2.startswith("Subscribed to topic."):
+  if not outc2.startswith("Subscribed to topic"):
     print("Error: C2 not subscribed to topic " + topic.name)
     return
 
