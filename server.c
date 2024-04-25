@@ -90,6 +90,9 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
 
   struct chat_packet received_packet;
 
+  struct tcp_id client_id;
+  struct tcp_sub client_sub;
+
   // Listen for TCP subscribers
   rc = listen(tcpfd, MAX_CONNECTIONS);
   DIE(rc < 0, "Could not listen for TCP.");
@@ -132,14 +135,17 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
           poll_fds[num_sockets].events = POLLIN;
           num_sockets++;
 
-          printf("New client <id> connected from %s:%d\nsocket client %d\n",
-                 inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port),
-                 newsockfd);
+          rc = recv_all(newsockfd, &client_id, sizeof(client_id));
+          DIE(rc < 0, "Could not receive client id.");
+
+          printf("New client %s connected from %s:%d.\n",
+                  client_id.id, inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+          // printf("socket client %d\n", newsockfd);
+
         } else if (poll_fds[i].fd == udpfd) { // UDP (new content)
           // Am primit date pe unul din socketii de client, asa ca le receptionam
-          rc = recv_all(poll_fds[i].fd, &received_packet,
-                            sizeof(received_packet));
-          DIE(rc < 0, "recv");
+          rc = recv_all(poll_fds[i].fd, &received_packet, sizeof(received_packet));
+          DIE(rc < 0, "Failed to recv from UDP.");
 
           if (rc == 0) {
             printf("Socket-ul client %d a inchis conexiunea\n", i);
@@ -158,12 +164,12 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
           }
         } else { // TCP (clients)
           // Am primit date pe unul din socketii de client, asa ca le receptionam
-          rc = recv_all(poll_fds[i].fd, &received_packet,
-                            sizeof(received_packet));
-          DIE(rc < 0, "recv");
+          rc = recv_all(poll_fds[i].fd, &client_sub, sizeof(client_sub));
+          DIE(rc < 0, "Failed to recv from TCP client.");
 
           if (rc == 0) {
-            printf("Socket-ul client %d a inchis conexiunea\n", i);
+            printf("Client %s disconnected.\n", "<your ID here>");
+            // printf("Socket-ul client %d a inchis conexiunea\n", i);
             close(poll_fds[i].fd);
 
             // Scoatem din multimea de citire socketul inchis
@@ -173,9 +179,10 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
 
             num_sockets--;
           } else {
-            printf("S-a primit de la clientul de pe socketul %d mesajul: %s\n",
-                   poll_fds[i].fd, received_packet.message);
-            /* TODO 2.1: Trimite mesajul catre toti ceilalti clienti */
+            char topic[50];
+            strncpy(topic, client_sub.topic, client_sub.len);
+            printf("S-a primit de la clientul de pe socketul %d mesajul: %s\n", poll_fds[i].fd, topic);
+            
           }
         }
       }

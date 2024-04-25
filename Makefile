@@ -7,7 +7,7 @@ PORT = 12345
 IP_SERVER = 127.0.0.1
 
 # ID-ul clientului
-ID_CLIENT = 1
+ID_CLIENT = lel737
 
 all: server subscriber
 
