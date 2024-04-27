@@ -25,9 +25,6 @@ void run_client(int tcpfd) {
   char buf[MSG_MAXSIZE + 1];
   memset(buf, 0, MSG_MAXSIZE + 1);
 
-  struct chat_packet sent_packet;
-  struct chat_packet recv_packet;
-
   struct tcp_sub sub_packet;
 
   struct pollfd poll_fds[2];
@@ -41,12 +38,6 @@ void run_client(int tcpfd) {
   poll_fds[1].fd = tcpfd;
   poll_fds[1].events = POLLIN;
 
-  /*
-    TODO 2.2: Multiplexati intre citirea de la tastatura si primirea unui
-    mesaj, ca sa nu mai fie impusa ordinea.
-
-    Hint: server::run_multi_chat_server
-  */
   while (1) {
     rc = poll(poll_fds, num_sockets, -1);
     DIE(rc < 0, "Something about poll failing.");
@@ -59,8 +50,9 @@ void run_client(int tcpfd) {
           fgets(buf, MSG_MAXSIZE, stdin);
 
           if (strncmp(buf, "exit", sizeof("exit") - 1) == 0) {
-            // TODO: disconnect gracefully
-            // send_all(tcpfd, NULL, 0);
+            for (int j = 0; j < num_sockets; j++) {
+              close(poll_fds[j].fd);
+            }
             return;
           } else if (strncmp(buf, "subscribe", sizeof("subscribe") - 1) == 0) {
             char topic[50];
@@ -80,31 +72,23 @@ void run_client(int tcpfd) {
             sub_packet.type = 0;
             sub_packet.len = strlen(topic);
             strcpy(sub_packet.topic, topic);
-            send_all(tcpfd, &sub_packet, sizeof(uint16_t) + sizeof(char) + sub_packet.len);
+            send_all(tcpfd, &sub_packet, sizeof(sub_packet));
 
             printf("Unsubscribed from topic %s.\n", topic);
           }
         } else if (poll_fds[i].fd == tcpfd) { // server
+          rc = recv_all(tcpfd, buf, 1);
 
+          if (rc == 0) { // server disconnected
+            for (int j = 0; j < num_sockets; j++) {
+              close(poll_fds[i].fd);
+            }
+            return;
+          }
         }
       }
     }
   }
-  // while (fgets(buf, sizeof(buf), stdin) && !isspace(buf[0])) {
-  //   sent_packet.len = strlen(buf) + 1;
-  //   strcpy(sent_packet.message, buf);
-
-  //   // Trimitem pachetul la server.
-  //   send_all(tcpfd, &sent_packet, sizeof(sent_packet));
-
-  //   // Primim un mesaj de la server si il afisam.
-  //   int rc = recv_all(tcpfd, &recv_packet, sizeof(recv_packet));
-  //   if (rc <= 0) {
-  //     break;
-  //   }
-
-  //   printf("%s\n", recv_packet.message);
-  // }
 }
 
 int main(int argc, char *argv[]) {
