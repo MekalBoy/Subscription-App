@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <arpa/inet.h>
 
 int send_all(int sockfd, void *buff, size_t len);
 int recv_all(int sockfd, void *buff, size_t len);
@@ -27,18 +28,30 @@ struct data_type2 {
 };
 
 struct data_type3 {
-  unsigned char STRING[MSG_MAXSIZE];
+  char STRING[MSG_MAXSIZE];
 };
 
-struct udp_msg {
+union topicData {
+  struct data_type0 t0; // sign + INT
+  struct data_type1 t1; // SHORT_REAL
+  struct data_type2 t2; // sign + FLOAT
+  struct data_type3 t3; // STRING[MSG_MAXSIZE]
+};
+  
+// Message received by server from UDP clients
+struct __attribute__((__packed__)) udp_msg {
   char topic[50];
   char type;
-  union udpData {
-    struct data_type0 t0; // sign + INT
-    struct data_type1 t1; // SHORT_REAL
-    struct data_type2 t2; // sign + FLOAT
-    struct data_type3 t3; // STRING[MSG_MAXSIZE]
-  } payload;
+  union topicData payload;
+};
+
+// Message sent by server to TCP clients
+struct tcp_msg {
+  struct in_addr udp_ip;
+  in_port_t udp_port;
+  char topic[50];
+  char type;
+  union topicData payload;
 };
 
 struct tcp_sub {

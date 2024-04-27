@@ -14,10 +14,10 @@ all: server subscriber
 common.o: common.c
 
 # Compileaza server.c
-server: server.c common.o
+server: server.c common.o -lm
 
 # Compileaza subscriber.c
-subscriber: subscriber.c common.o
+subscriber: subscriber.c common.o -lm
 
 .PHONY: clean run_server run_subscriber
 
@@ -28,6 +28,9 @@ run_server:
 # Ruleaza subscriberul 	
 run_subscriber:
 	./subscriber ${ID_CLIENT} ${IP_SERVER} ${PORT}
+
+run_subscriber2:
+	./subscriber ohoho ${IP_SERVER} ${PORT}
 
 clean:
 	rm -rf server subscriber *.o *.dSYM

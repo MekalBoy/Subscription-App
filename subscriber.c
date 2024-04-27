@@ -5,13 +5,11 @@
  */
 
 #include <arpa/inet.h>
-#include <ctype.h>
-#include <errno.h>
+#include <math.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/poll.h>
 #include <sys/socket.h>
@@ -26,6 +24,7 @@ void run_client(int tcpfd) {
   memset(buf, 0, MSG_MAXSIZE + 1);
 
   struct tcp_sub sub_packet;
+  struct tcp_msg data_packet;
 
   struct pollfd poll_fds[2];
   int num_sockets = 2; // stdin, tcp
@@ -40,7 +39,7 @@ void run_client(int tcpfd) {
 
   while (1) {
     rc = poll(poll_fds, num_sockets, -1);
-    DIE(rc < 0, "Something about poll failing.");
+    DIE(rc < 0, "Polling failed.");
 
     for (int i = 0; i < num_sockets; i++) {
       if (poll_fds[i].revents & POLLIN) {
@@ -56,34 +55,65 @@ void run_client(int tcpfd) {
             return;
           } else if (strncmp(buf, "subscribe", sizeof("subscribe") - 1) == 0) {
             char topic[50];
-            sscanf(buf, "%s %s", topic, topic);
-            // printf("%s\n", topic);
+            sscanf(buf, "%s %s\n", topic, topic);
+            printf("Subscribed to topic %s\n", topic);
 
             sub_packet.type = 1;
             sub_packet.len = strlen(topic) + 1;
             strcpy(sub_packet.topic, topic);
-            send_all(tcpfd, &sub_packet, sizeof(sub_packet));
+            send(tcpfd, &sub_packet, sizeof(sub_packet), 0);
 
-            printf("Subscribed to topic %s.\n", topic);
           } else if (strncmp(buf, "unsubscribe", sizeof("unsubscribe") - 1) == 0) {
             char topic[50];
-            sscanf(buf, "%s %s", topic, topic);
+            sscanf(buf, "%s %s\n", topic, topic);
+            printf("Unsubscribed from topic %s\n", topic);
 
             sub_packet.type = 0;
             sub_packet.len = strlen(topic);
             strcpy(sub_packet.topic, topic);
-            send_all(tcpfd, &sub_packet, sizeof(sub_packet));
-
-            printf("Unsubscribed from topic %s.\n", topic);
+            send(tcpfd, &sub_packet, sizeof(sub_packet), 0);
           }
         } else if (poll_fds[i].fd == tcpfd) { // server
-          rc = recv_all(tcpfd, buf, 1);
+          rc = recv_all(tcpfd, &data_packet, sizeof(data_packet));
+          DIE(rc < 0, "Could not receive from server");
 
           if (rc == 0) { // server disconnected
             for (int j = 0; j < num_sockets; j++) {
               close(poll_fds[i].fd);
             }
             return;
+          } else {
+            printf("%s:%d - %s - ", inet_ntoa(data_packet.udp_ip), ntohs(data_packet.udp_port), data_packet.topic);
+            uint32_t uINT;
+            int INT;
+            double SHORT_REAL;
+            uint32_t uFloat;
+            uint8_t power;
+            float FLOAT;
+            char STRING[1501];
+
+            switch (data_packet.type) {
+              case 0: // uint32_t INT
+                uINT = ntohl(*((uint32_t*)(data_packet.payload.t3.STRING + 1)));
+                INT = uINT * (data_packet.payload.t0.sign == 0 ? 1 : -1);
+                printf("INT - %d\n", INT);
+                break;
+              case 1: // uint16_t SHORT_REAL
+                SHORT_REAL = ntohs(*(uint16_t*)(data_packet.payload.t3.STRING));
+                printf("SHORT_REAL - %.2f\n", SHORT_REAL / 100);
+                break;
+              case 2: // float FLOAT
+                uFloat = ntohl(*(uint32_t*)(data_packet.payload.t3.STRING + 1));
+                power = ntohs(*(uint32_t*)(data_packet.payload.t3.STRING + 1 + 3));
+                FLOAT = (float)(uFloat) / (float)pow(10, power) * (float)(data_packet.payload.t2.sign == 0 ? 1 : -1);
+                printf("FLOAT - %.*lf\n", power, FLOAT);
+                break;
+              case 3: // char STRING[MSG_MAXSIZE]
+                strncpy(STRING, data_packet.payload.t3.STRING, 1500);
+                STRING[1500] = '\0';
+                printf("STRING - %s\n", STRING);
+                break;
+            }
           }
         }
       }
@@ -102,9 +132,13 @@ int main(int argc, char *argv[]) {
   int rc = sscanf(argv[3], "%hu", &port);
   DIE(rc != 1, "Given port is invalid");
 
+  // Disable buffer
+  rc = setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+  DIE(rc < 0, "Could not disable buffer");
+
   // Obtinem un socket TCP pentru conectarea la server
   const int tcpfd = socket(AF_INET, SOCK_STREAM, 0);
-  DIE(tcpfd < 0, "Could not obtain TCP socket.");
+  DIE(tcpfd < 0, "Could not obtain TCP socket");
 
   // Completăm in serv_addr adresa serverului, familia de adrese si portul pentru conectare
   struct sockaddr_in serv_addr;
@@ -116,13 +150,13 @@ int main(int argc, char *argv[]) {
   rc = inet_pton(AF_INET, argv[2], &serv_addr.sin_addr.s_addr);
   DIE(rc <= 0, "inet_pton");
 
-  DIE(strlen(argv[1]) > 10, "ID longer than 10.");
+  DIE(strlen(argv[1]) > 10, "ID longer than 10");
   struct tcp_id client_id;
   strcpy(client_id.id, argv[1]);
 
   // Ne conectăm la server
   rc = connect(tcpfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
-  DIE(rc < 0, "Could not connect to server.");
+  DIE(rc < 0, "Could not connect to server");
 
   send_all(tcpfd, &client_id, sizeof(client_id));
 
