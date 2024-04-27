@@ -45,7 +45,8 @@ struct client_entry *findClientByFD(int fd) {
 int addClient(char id[10], int sockfd) {
   struct client_entry *prevClient = findClientByID(id);
   if (prevClient != NULL) {
-    if (prevClient->sockfd == -1) { // client was here previously, reconnect them
+    if (prevClient->sockfd ==
+        -1) { // client was here previously, reconnect them
       prevClient->sockfd = sockfd;
       return 1;
     }
@@ -70,7 +71,7 @@ void unsubscribeTopic(struct client_entry *entry, char *topic) {
 }
 
 // Returns 0 if topic is found, -1 otherwise
-int findTopic (struct client_entry *entry, char *topic) {
+int findTopic(struct client_entry *entry, char *topic) {
   struct double_list *curr = entry->topiclist;
   while (curr != NULL) {
     if (strcmp(curr->topic, topic) == 0) {
@@ -114,124 +115,105 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
     rc = poll(poll_fds, num_sockets, 1);
     DIE(rc < 0, "Polling failed");
 
-    for (int i = 0; i < num_sockets; i++) {
-      if (poll_fds[i].revents & POLLIN) {
-        if (poll_fds[i].fd == STDIN_FILENO) { // Probably an 'exit' command
-          fgets(buf, MAX_PAYLOAD, stdin);
+    if (poll_fds[0].revents & POLLIN) { // Probably an 'exit' command
+      fgets(buf, MAX_PAYLOAD, stdin);
 
-          if (strncmp(buf, "exit", sizeof("exit") - 1) == 0) {
-            // TODO: disconnect everyone gracefully
-            for (int j = 0; j < num_sockets; j++) {
-              close(poll_fds[i].fd);
-            }
-            return;
-          }
-        } else if (poll_fds[i].fd == tcpfd) { // TCP (new connection)
-          struct sockaddr_in cli_addr;
-          socklen_t cli_len = sizeof(cli_addr);
-          int newsockfd = accept(tcpfd, (struct sockaddr *)&cli_addr, &cli_len);
-          DIE(newsockfd < 0, "Could not accept TCP connection");
+      if (strncmp(buf, "exit", sizeof("exit") - 1) == 0) {
+        // disconnect everyone "gracefully"
+        for (int j = 0; j < num_sockets; j++) {
+          close(poll_fds[j].fd);
+        }
 
-          // Disable Nagle (TCP)
-          rc = setsockopt(tcpfd, IPPROTO_TCP, TCP_NODELAY, &nagle, sizeof(nagle));
-          DIE(rc < 0, "Could not disable Nagle at client");
-
-          rc = recv_all(newsockfd, &client_id, sizeof(client_id));
-          DIE(rc < 0, "Could not receive client id");
-
-          rc = addClient(client_id.id, newsockfd);
-
-          poll_fds[num_sockets].fd = newsockfd;
-          poll_fds[num_sockets].events = POLLIN;
-          num_sockets++;
+        return;
+      }
+    }
     
-          if (rc < 0) {
-            printf("Client %s already connected.\n", client_id.id);
-            close(newsockfd);
-            for (int j = i; j < num_sockets - 1; j++) {
-              poll_fds[j] = poll_fds[j + 1];
-            }
+    if (poll_fds[1].revents & POLLIN) { // TCP (new connection)
+      struct sockaddr_in cli_addr;
+      socklen_t cli_len = sizeof(cli_addr);
+      int newsockfd = accept(tcpfd, (struct sockaddr *)&cli_addr, &cli_len);
+      DIE(newsockfd < 0, "Could not accept TCP connection");
 
-            num_sockets--;
+      // Disable Nagle (TCP)
+      rc = setsockopt(tcpfd, IPPROTO_TCP, TCP_NODELAY, &nagle, sizeof(nagle));
+      DIE(rc < 0, "Could not disable Nagle at client");
 
-            break;
-          }
+      rc = recv_all(newsockfd, &client_id, sizeof(client_id));
+      DIE(rc < 0, "Could not receive client id");
 
-          printf("New client %s connected from %s:%d.\n",
-                  client_id.id, inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+      rc = addClient(client_id.id, newsockfd);
 
-        } else if (poll_fds[i].fd == udpfd) { // UDP (new content)
-          // Am primit date pe unul din socketii de client, asa ca le receptionam
-          struct sockaddr_in cli_addr;
-          socklen_t cli_len = sizeof(cli_addr);
+      if (rc < 0) {
+        printf("Client %s already connected.\n", client_id.id);
+        close(newsockfd);
+      } else if (rc == 0) {
+        poll_fds[num_sockets].fd = newsockfd;
+        poll_fds[num_sockets].events = POLLIN;
+        num_sockets++;
 
-          rc = recvfrom(poll_fds[i].fd, &udp_packet, sizeof(struct udp_msg), 0, (struct sockaddr *)&cli_addr, &cli_len);
-          DIE(rc < 0, "Failed to recv from UDP");
+        printf("New client %s connected from %s:%d.\n", client_id.id,
+               inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+      } else { // Client reconnecting
+        struct client_entry *client = findClientByID(client_id.id);
+        client->sockfd = newsockfd;
 
-          if (rc == 0) {
-            printf("Socket-ul client %d a inchis conexiunea\n", i);
-            close(poll_fds[i].fd);
+        printf("New client %s connected from %s:%d.\n", client_id.id,
+               inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
+      }
+    }
+    
+    if (poll_fds[2].revents & POLLIN) { // UDP (new content)
+      struct sockaddr_in cli_addr;
+      socklen_t cli_len = sizeof(cli_addr);
 
-            // Scoatem din multimea de citire socketul inchis
-            for (int j = i; j < num_sockets - 1; j++) {
-              poll_fds[j] = poll_fds[j + 1];
-            }
+      rc = recvfrom(udpfd, &udp_packet, sizeof(struct udp_msg), 0,
+                    (struct sockaddr *)&cli_addr, &cli_len);
+      DIE(rc < 0, "Failed to recv from UDP");
 
-            num_sockets--;
-          } else {
-            for (int j = 0; j < client_db_len; j++) {
-              if (client_db[j].sockfd < 0) { // client is not connected at the moment
-                continue;
-              }
+      // Go through (active) clients and see who's subscribed to this topic
+      for (int j = 0; j < client_db_len; j++) {
+        if (client_db[j].sockfd < 0) { // client is not connected at the moment
+          continue;
+        }
 
-              if (findTopic(&client_db[j], udp_packet.topic) == 0) {
-                struct tcp_msg newMsg;
-                newMsg.udp_ip = cli_addr.sin_addr; // as-is
-                newMsg.udp_port = cli_addr.sin_port; // as-is
-                strcpy(newMsg.topic,udp_packet.topic);
-                newMsg.type = udp_packet.type;
-                newMsg.payload = udp_packet.payload;
+        // If matching topic is found, bundle the IP and port of the udp messenger
+        // along with the topic, type and payload
+        if (findTopic(&client_db[j], udp_packet.topic) == 0) {
+          struct tcp_msg newMsg;
 
-                send_all(client_db[j].sockfd, &newMsg, sizeof(newMsg));
-                continue;
-              }
-            }
-          }
-        } else { // TCP (clients)
-          struct client_entry *clientinfo = findClientByFD(poll_fds[i].fd);
+          newMsg.udp_ip = cli_addr.sin_addr;
+          newMsg.udp_port = cli_addr.sin_port;
 
-          // Am primit date pe unul din socketii de client, asa ca le receptionam
-          rc = recv_all(poll_fds[i].fd, &client_sub, sizeof(client_sub));
-          DIE(rc < 0, "Failed to recv from TCP client");
+          strcpy(newMsg.topic, udp_packet.topic);
+          newMsg.type = udp_packet.type;
+          newMsg.payload = udp_packet.payload;
 
-          if (rc == 0) {
-            printf("Client %s disconnected.\n", clientinfo->id);
-            // printf("Socket-ul client %d a inchis conexiunea\n", i);
-            close(poll_fds[i].fd);
-            clientinfo->sockfd = -1; // set sockfd inactive
+          send_all(client_db[j].sockfd, &newMsg, sizeof(newMsg));
+          continue;
+        }
+      }
+    }
 
-            // Scoatem din multimea de citire socketul inchis
-            for (int j = i; j < num_sockets - 1; j++) {
-              poll_fds[j] = poll_fds[j + 1];
-            }
+    for (int i = 3; i < num_sockets; i++) {
+      if (poll_fds[i].revents & POLLIN) { // TCP (clients)
+        struct client_entry *clientinfo = findClientByFD(poll_fds[i].fd);
 
-            num_sockets--;
-          } else {
-            char topic[50];
-            strncpy(topic, client_sub.topic, client_sub.len);
+        // Am primit date pe unul din socketii de client, asa ca le receptionam
+        rc = recv_all(poll_fds[i].fd, &client_sub, sizeof(client_sub));
+        DIE(rc < 0, "Failed to recv from TCP client");
 
-            if (client_sub.type == 0) { // 0 - unsubscribe from topic
-              // rc = findTopic(clientinfo->topiclist, topic);
-              // printf("Found topic: %d", rc);
-              
-              unsubscribeTopic(clientinfo, topic);
+        if (rc == 0) {
+          printf("Client %s disconnected.\n", clientinfo->id);
+          close(poll_fds[i].fd);
+          clientinfo->sockfd = -1; // set sockfd inactive
+        } else {
+          char topic[50];
+          strncpy(topic, client_sub.topic, client_sub.len);
 
-              // rc = findTopic(clientinfo->topiclist, topic);
-              // printf("Found topic: %d", rc);
-            } else if (client_sub.type == 1) {
-              subscribeTopic(clientinfo, topic);
-            }
-            
+          if (client_sub.type == 0) { // unsubscribe from topic
+            unsubscribeTopic(clientinfo, topic);
+          } else if (client_sub.type == 1) { // subscribe to topic
+            subscribeTopic(clientinfo, topic);
           }
         }
       }
@@ -239,17 +221,16 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
   }
 }
 
-
 int main(int argc, char *argv[]) {
   if (argc != 2) {
-    printf("\n Usage: %s <port>\n", argv[0]);
+    printf("\nUsage: %s <port>\n", argv[0]);
     return 1;
   }
 
   uint16_t port;
   int rc, tcpfd, udpfd;
   const int nagle = 0;
-  const int enable = 1;
+  const int reuseTCP = 1;
 
   // Parse port
   rc = sscanf(argv[1], "%hu", &port);
@@ -267,23 +248,21 @@ int main(int argc, char *argv[]) {
   udpfd = socket(AF_INET, SOCK_DGRAM, 0);
   DIE(tcpfd < 0, "Could not get UDP socket");
 
-  rc = setsockopt(tcpfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+  rc = setsockopt(tcpfd, SOL_SOCKET, SO_REUSEADDR, &reuseTCP, sizeof(int));
   DIE(rc < 0, "Could not make TCP reusable");
 
   // Disable Nagle (TCP)
   rc = setsockopt(tcpfd, IPPROTO_TCP, TCP_NODELAY, &nagle, sizeof(int));
   DIE(rc < 0, "Could not disable Nagle at startup");
 
-  // Completăm in serv_addr adresa serverului, familia de adrese si portul
-  // pentru conectare
   struct sockaddr_in serv_addr;
   socklen_t socket_len = sizeof(struct sockaddr_in);
 
   memset(&serv_addr, 0, socket_len);
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_port = htons(port);
-//   rc = inet_pton(AF_INET, argv[1], &serv_addr.sin_addr.s_addr);
-//   DIE(rc <= 0, "inet_pton");
+  // rc = inet_pton(AF_INET, argv[1], &serv_addr.sin_addr.s_addr);
+  // DIE(rc <= 0, "inet_pton");
 
   // Bind TCP
   rc = bind(tcpfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr));
@@ -295,8 +274,7 @@ int main(int argc, char *argv[]) {
 
   run_chat_multi_server(tcpfd, udpfd);
 
-  // Inchidem fd-urile
-  // close(listenfd);
+  // Redundant because everything is closed on `exit`
   close(tcpfd);
   close(udpfd);
 
