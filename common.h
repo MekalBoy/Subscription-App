@@ -28,7 +28,7 @@ struct data_type2 {
 };
 
 struct data_type3 {
-  char STRING[MSG_MAXSIZE];
+  char STRING[MSG_MAXSIZE + 1];
 };
 
 union topicData {
@@ -42,16 +42,17 @@ union topicData {
 struct __attribute__((__packed__)) udp_msg {
   char topic[50];
   char type;
-  union topicData payload;
+  char payload[MSG_MAXSIZE];
 };
 
-// Message sent by server to TCP clients
+// Info message sent by server to TCP clients
+// Using this, they know which type to receive (defined above data_typeX)
 struct tcp_msg {
   struct in_addr udp_ip;
   in_port_t udp_port;
   char topic[50];
   char type;
-  union topicData payload;
+  int len; // only for STRING
 };
 
 struct tcp_sub {

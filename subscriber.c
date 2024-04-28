@@ -25,6 +25,12 @@ void run_client(int tcpfd) {
 
   struct tcp_sub sub_packet;
   struct tcp_msg data_packet;
+  int payloadComing = 0;
+
+  struct data_type0 t0;
+  struct data_type1 t1;
+  struct data_type2 t2;
+  struct data_type3 t3;
 
   struct pollfd poll_fds[2];
   int num_sockets = 2; // stdin, tcp
@@ -74,7 +80,24 @@ void run_client(int tcpfd) {
             send(tcpfd, &sub_packet, sizeof(sub_packet), 0);
           }
         } else if (poll_fds[i].fd == tcpfd) { // server
-          rc = recv_all(tcpfd, &data_packet, sizeof(data_packet));
+          if (payloadComing) {
+            switch (data_packet.type) {
+              case 0: // uint32_t INT
+                rc = recv_all(tcpfd, &t0, sizeof(t0));
+                break;
+              case 1: // uint16_t SHORT_REAL
+                rc = recv_all(tcpfd, &t1, sizeof(t1));
+                break;
+              case 2: // float FLOAT
+                rc = recv_all(tcpfd, &t2, sizeof(t2));
+                break;
+              case 3: // char STRING[MSG_MAXSIZE]
+                rc = recv_all(tcpfd, &t3, sizeof(t3));
+                break;
+            }
+          } else {
+            rc = recv_all(tcpfd, &data_packet, sizeof(data_packet));
+          }
           DIE(rc < 0, "Could not receive from server");
 
           if (rc == 0) { // server disconnected
@@ -83,36 +106,41 @@ void run_client(int tcpfd) {
             }
             return;
           } else {
-            printf("%s:%d - %s - ", inet_ntoa(data_packet.udp_ip), ntohs(data_packet.udp_port), data_packet.topic);
-            uint32_t uINT;
-            int INT;
-            double SHORT_REAL;
-            uint32_t uFloat;
-            uint8_t power;
-            float FLOAT;
-            char STRING[1501];
+            if (payloadComing) {
+              printf("%s:%d - %s - ", inet_ntoa(data_packet.udp_ip), ntohs(data_packet.udp_port), data_packet.topic);
+              uint32_t uINT;
+              int INT;
+              double SHORT_REAL;
+              uint32_t uFloat;
+              uint8_t power;
+              float FLOAT;
+              char STRING[1501];
 
-            switch (data_packet.type) {
-              case 0: // uint32_t INT
-                uINT = ntohl(*((uint32_t*)(data_packet.payload.t3.STRING + 1)));
-                INT = uINT * (data_packet.payload.t0.sign == 0 ? 1 : -1);
-                printf("INT - %d\n", INT);
-                break;
-              case 1: // uint16_t SHORT_REAL
-                SHORT_REAL = ntohs(*(uint16_t*)(data_packet.payload.t3.STRING));
-                printf("SHORT_REAL - %.2f\n", SHORT_REAL / 100);
-                break;
-              case 2: // float FLOAT
-                uFloat = ntohl(*(uint32_t*)(data_packet.payload.t3.STRING + 1));
-                power = ntohs(*(uint32_t*)(data_packet.payload.t3.STRING + 1 + 3));
-                FLOAT = (float)(uFloat) / (float)pow(10, power) * (float)(data_packet.payload.t2.sign == 0 ? 1 : -1);
-                printf("FLOAT - %.*lf\n", power, FLOAT);
-                break;
-              case 3: // char STRING[MSG_MAXSIZE]
-                strncpy(STRING, data_packet.payload.t3.STRING, 1500);
-                STRING[1500] = '\0';
-                printf("STRING - %s\n", STRING);
-                break;
+              switch (data_packet.type) {
+                case 0: // uint32_t INT
+                  uINT = t0.INT;
+                  INT = uINT * (t0.sign == 0 ? 1 : -1);
+                  printf("INT - %d\n", INT);
+                  break;
+                case 1: // uint16_t SHORT_REAL
+                  SHORT_REAL = t1.SHORT_REAL;
+                  printf("SHORT_REAL - %.2f\n", SHORT_REAL / 100);
+                  break;
+                case 2: // float FLOAT
+                  uFloat = t2.FLOAT;
+                  power = t2.power;
+                  FLOAT = (float)(uFloat) / (float)pow(10, power) * (float)(t2.sign == 0 ? 1 : -1);
+                  printf("FLOAT - %.*lf\n", power, FLOAT);
+                  break;
+                case 3: // char STRING[MSG_MAXSIZE + 1]
+                  printf("STRING - %s\n", t3.STRING);
+                  break;
+              }
+
+              // go back to listening for info packets
+              payloadComing = 0;
+            } else {
+              payloadComing = 1;
             }
           }
         }
