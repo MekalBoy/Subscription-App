@@ -70,15 +70,63 @@ void unsubscribeTopic(struct client_entry *entry, char *topic) {
   entry->topiclist = deleteTopic(entry->topiclist, topic);
 }
 
-// Returns 0 if topic is found, -1 otherwise
-int findTopic(struct client_entry *entry, char *topic) {
-  struct double_list *curr = entry->topiclist;
-  while (curr != NULL) {
-    if (strcmp(curr->topic, topic) == 0) {
+// Returns 0 if a topic match occurs, -1 otherwise
+int matchTopic(struct client_entry *entry, char *topic) { // TODO - FIX
+  struct double_list *current = entry->topiclist;
+  while (current != NULL) {
+    char *pattern = current->topic;
+    char *topicPtr = topic;
+    int match = 1;
+
+    while (*topicPtr != '\0' && *pattern != '\0') {
+      if (*pattern == '*') { // handle wildcard *
+        if (*(pattern + 1) == '\0') { // * is the last one, will match anything
+          return 0;
+        }
+
+        char* nextSlash = strchrnul(pattern + 2, '/');
+        char* word = malloc(strlen(pattern) + 1);
+        strncpy(word, pattern + 2, nextSlash - pattern - 1);
+        topicPtr = strstr(topicPtr, word);
+
+        if (topicPtr == NULL) { // didn't find it so no match
+          match = 0;
+          break;
+        }
+
+        free(word);
+
+        pattern++; // skip over /
+        pattern++; // go to next char after /
+      } else if (*pattern == '+') { // handle wildcard +
+        while (*pattern != '\0' && *pattern != '/') { // skip to next /
+          pattern++;
+        }
+        while (*topicPtr != '\0' && *topicPtr != '/') { // skip to next /
+          topicPtr++;
+        }
+        
+        if (*pattern == '\0' && *topicPtr == '/') { // pattern is not exhaustive
+          match = 0;
+        } else if (*pattern == '/' && *topicPtr == '\0') { // pattern is more specific
+          match = 0;
+        }
+      } else if (*pattern != *topicPtr) {
+        // If characters don't match
+        match = 0;
+        break;
+      }
+
+      topicPtr++;
+      pattern++;
+    }
+
+    // If end of both strings reached, then they match
+    if (match) {
       return 0;
     }
 
-    curr = curr->next;
+    current = current->next;
   }
 
   return -1;
@@ -127,7 +175,7 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
         return;
       }
     }
-    
+
     if (poll_fds[1].revents & POLLIN) { // TCP (new connection)
       struct sockaddr_in cli_addr;
       socklen_t cli_len = sizeof(cli_addr);
@@ -161,7 +209,7 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
                inet_ntoa(cli_addr.sin_addr), ntohs(cli_addr.sin_port));
       }
     }
-    
+
     if (poll_fds[2].revents & POLLIN) { // UDP (new content)
       struct sockaddr_in cli_addr;
       socklen_t cli_len = sizeof(cli_addr);
@@ -176,9 +224,9 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
           continue;
         }
 
-        // If matching topic is found, bundle the IP and port of the udp messenger
-        // along with the topic, type and payload
-        if (findTopic(&client_db[j], udp_packet.topic) == 0) {
+        // If matching topic is found, bundle the IP and port of the udp
+        // messenger along with the topic, type and payload
+        if (matchTopic(&client_db[j], udp_packet.topic) == 0) {
           struct tcp_msg newMsg;
 
           newMsg.udp_ip = cli_addr.sin_addr;
