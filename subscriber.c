@@ -1,21 +1,3 @@
-/*
- * Protocoale de comunicatii
- * Laborator 7 - TCP si mulplixare
- * client.c
- */
-
-#include <arpa/inet.h>
-#include <math.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/poll.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
-
 #include "common.h"
 #include "helpers.h"
 
@@ -108,29 +90,20 @@ void run_client(int tcpfd) {
           } else {
             if (payloadComing) {
               printf("%s:%d - %s - ", inet_ntoa(data_packet.udp_ip), ntohs(data_packet.udp_port), data_packet.topic);
-              uint32_t uINT;
-              int INT;
               double SHORT_REAL;
-              uint32_t uFloat;
-              uint8_t power;
               float FLOAT;
-              char STRING[1501];
 
               switch (data_packet.type) {
                 case 0: // uint32_t INT
-                  uINT = t0.INT;
-                  INT = uINT * (t0.sign == 0 ? 1 : -1);
-                  printf("INT - %d\n", INT);
+                  printf("INT - %d\n", t0.INT * (t0.sign == 0 ? 1 : -1));
                   break;
                 case 1: // uint16_t SHORT_REAL
                   SHORT_REAL = t1.SHORT_REAL;
                   printf("SHORT_REAL - %.2f\n", SHORT_REAL / 100);
                   break;
                 case 2: // float FLOAT
-                  uFloat = t2.FLOAT;
-                  power = t2.power;
-                  FLOAT = (float)(uFloat) / (float)pow(10, power) * (float)(t2.sign == 0 ? 1 : -1);
-                  printf("FLOAT - %.*lf\n", power, FLOAT);
+                  FLOAT = (float)(t2.FLOAT) / (float)pow(10, t2.power) * (float)(t2.sign == 0 ? 1 : -1);
+                  printf("FLOAT - %.*lf\n", t2.power, FLOAT);
                   break;
                 case 3: // char STRING[MSG_MAXSIZE + 1]
                   printf("STRING - %s\n", t3.STRING);

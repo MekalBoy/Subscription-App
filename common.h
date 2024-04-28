@@ -1,9 +1,20 @@
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
-#include <stddef.h>
-#include <stdint.h>
 #include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/poll.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <math.h>
+#include <netdb.h>
+#include <stddef.h>
 
 int send_all(int sockfd, void *buff, size_t len);
 int recv_all(int sockfd, void *buff, size_t len);

@@ -1,15 +1,3 @@
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <poll.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
-
 #include "common.h"
 #include "helpers.h"
 
@@ -234,12 +222,15 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
           newMsg.type = udp_packet.type;
           newMsg.len = strlen(udp_packet.payload);
 
+          // Send the informational packet
           send(client_db[j].sockfd, &newMsg, sizeof(newMsg), 0);
+
           struct data_type0 t0;
           struct data_type1 t1;
           struct data_type2 t2;
           struct data_type3 t3;
 
+          // Prepare and send the actual data
           switch (udp_packet.type) {
             case 0: // INT
               t0.sign = udp_packet.payload[0];
@@ -271,7 +262,6 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
       if (poll_fds[i].revents & POLLIN) { // TCP (clients)
         struct client_entry *clientinfo = findClientByFD(poll_fds[i].fd);
 
-        // Am primit date pe unul din socketii de client, asa ca le receptionam
         rc = recv_all(poll_fds[i].fd, &client_sub, sizeof(client_sub));
         DIE(rc < 0, "Failed to recv from TCP client");
 
