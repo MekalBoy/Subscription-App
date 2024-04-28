@@ -45,8 +45,7 @@ struct client_entry *findClientByFD(int fd) {
 int addClient(char id[10], int sockfd) {
   struct client_entry *prevClient = findClientByID(id);
   if (prevClient != NULL) {
-    if (prevClient->sockfd ==
-        -1) { // client was here previously, reconnect them
+    if (prevClient->sockfd == -1) { // client was here previously, reconnect them
       prevClient->sockfd = sockfd;
       return 1;
     }
@@ -85,16 +84,15 @@ int matchTopic(struct client_entry *entry, char *topic) { // TODO - FIX
         }
 
         char* nextSlash = strchrnul(pattern + 2, '/');
-        char* word = malloc(strlen(pattern) + 1);
-        strncpy(word, pattern + 2, nextSlash - pattern - 1);
+        char* word = strdup(pattern + 2);
+        word[nextSlash - pattern - 1] = '\0';
         topicPtr = strstr(topicPtr, word);
+        free(word);
 
         if (topicPtr == NULL) { // didn't find it so no match
           match = 0;
           break;
         }
-
-        free(word);
 
         pattern++; // skip over /
         pattern++; // go to next char after /
@@ -236,7 +234,7 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
           newMsg.type = udp_packet.type;
           newMsg.payload = udp_packet.payload;
 
-          send_all(client_db[j].sockfd, &newMsg, sizeof(newMsg));
+          send(client_db[j].sockfd, &newMsg, sizeof(newMsg), 0);
           continue;
         }
       }
