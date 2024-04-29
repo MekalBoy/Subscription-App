@@ -217,42 +217,13 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
 
           newMsg.udp_ip = cli_addr.sin_addr;
           newMsg.udp_port = cli_addr.sin_port;
+          newMsg.datalen = rc;
+          
+          // Forward the informational packet
+          rc = send_all(client_db[j].sockfd, &newMsg, sizeof(newMsg));
 
-          strcpy(newMsg.topic, udp_packet.topic);
-          newMsg.type = udp_packet.type;
-          newMsg.len = strlen(udp_packet.payload);
-
-          // Send the informational packet
-          send(client_db[j].sockfd, &newMsg, sizeof(newMsg), 0);
-
-          struct data_type0 t0;
-          struct data_type1 t1;
-          struct data_type2 t2;
-          struct data_type3 t3;
-
-          // Prepare and send the actual data
-          switch (udp_packet.type) {
-            case 0: // INT
-              t0.sign = udp_packet.payload[0];
-              t0.INT = ntohl(*((uint32_t*)(udp_packet.payload + 1)));
-              send(client_db[j].sockfd, &t0, sizeof(t0), 0);
-              break;
-            case 1: // SHORT_REAL
-              t1.SHORT_REAL = ntohs(*(uint16_t*)(udp_packet.payload));
-              send(client_db[j].sockfd, &t1, sizeof(t1), 0);
-              break;
-            case 2: // FLOAT
-              t2.sign = udp_packet.payload[0];
-              t2.FLOAT = ntohl(*(uint32_t*)(udp_packet.payload + 1));
-              t2.power = ntohs(*(uint32_t*)(udp_packet.payload + 1 + 3));
-              send(client_db[j].sockfd, &t2, sizeof(t2), 0);
-              break;
-            case 3: // STRING
-              strncpy(t3.STRING, udp_packet.payload, 1500);
-              t3.STRING[1500] = '\0';
-              send(client_db[j].sockfd, &t3, sizeof(t3), 0);
-              break;
-          }
+          // Forward the data
+          rc = send_all(client_db[j].sockfd, &udp_packet, newMsg.datalen);
           continue;
         }
       }

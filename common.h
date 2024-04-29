@@ -61,9 +61,7 @@ struct __attribute__((__packed__)) udp_msg {
 struct tcp_msg {
   struct in_addr udp_ip;
   in_port_t udp_port;
-  char topic[50];
-  char type;
-  int len; // only for STRING
+  int datalen;
 };
 
 struct tcp_sub {
