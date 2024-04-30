@@ -23,32 +23,6 @@ struct double_list *deleteTopic(struct double_list *head, char *topic);
 
 #define MSG_MAXSIZE 1500
 
-struct data_type0 {
-  unsigned char sign;
-  uint32_t INT; // network byte order
-};
-
-struct data_type1 {
-  uint16_t SHORT_REAL; // modulul numarului inmultit cu 100 (huh?)
-};
-
-struct data_type2 {
-  unsigned char sign;
-  uint32_t FLOAT; // network byte order (modululu numarului obtinut din alipirea partii intregi de partea zecimala a numarului)
-  uint8_t power; // modulul puterii negative a lui 10 cu care trebuie inmultit modulul pentru a obtine numarul original (in modul)
-};
-
-struct data_type3 {
-  char STRING[MSG_MAXSIZE + 1];
-};
-
-union topicData {
-  struct data_type0 t0; // sign + INT
-  struct data_type1 t1; // SHORT_REAL
-  struct data_type2 t2; // sign + FLOAT
-  struct data_type3 t3; // STRING[MSG_MAXSIZE]
-};
-  
 // Message received by server from UDP clients
 struct __attribute__((__packed__)) udp_msg {
   char topic[50];
@@ -57,7 +31,7 @@ struct __attribute__((__packed__)) udp_msg {
 };
 
 // Info message sent by server to TCP clients
-// Using this, they know which type to receive (defined above data_typeX)
+// Using this, they know how many bytes of the payload to receive
 struct tcp_msg {
   struct in_addr udp_ip;
   in_port_t udp_port;

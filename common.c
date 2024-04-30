@@ -1,9 +1,4 @@
 #include "common.h"
-#include <string.h>
-#include <stdlib.h>
-
-#include <sys/socket.h>
-#include <sys/types.h>
 
 int recv_all(int sockfd, void *buffer, size_t len) {
   size_t bytes_received = 0;
