@@ -8,7 +8,6 @@ void run_client(int tcpfd) {
   struct tcp_sub sub_packet;
   struct udp_msg data_packet; // forwarded udp message
   struct tcp_msg info_packet; // forwarded udp ip+port
-  int payloadComing = 0;
 
   struct pollfd poll_fds[2];
   int num_sockets = 2; // stdin, tcp

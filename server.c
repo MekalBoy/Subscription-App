@@ -1,11 +1,13 @@
 #include "common.h"
 #include "helpers.h"
 
-#define MAX_CONNECTIONS 32
+#define STARTING_CONNECTIONS 32
+#define MAX_QUEUE 32
 #define MAX_PAYLOAD 50 + 1 + 1500
 
-struct client_entry client_db[MAX_CONNECTIONS];
+struct client_entry *client_db;
 int client_db_len = 0;
+int client_db_cap = STARTING_CONNECTIONS;
 
 // Returns a client entry if the client is found, or NULL
 struct client_entry *findClientByID(char id[10]) {
@@ -29,7 +31,7 @@ struct client_entry *findClientByFD(int fd) {
   return NULL;
 }
 
-// Returns 0 on success, -1 if the client's ID is already present.
+// Returns 0 on success, -1 if the client's ID is already present
 int addClient(char id[10], int sockfd) {
   struct client_entry *prevClient = findClientByID(id);
   if (prevClient != NULL) {
@@ -38,6 +40,12 @@ int addClient(char id[10], int sockfd) {
       return 1;
     }
     return -1; // there's already an active client with that ID
+  }
+
+  // make more space
+  if (client_db_cap - 1 == client_db_len) {
+    client_db = reallocarray(client_db, client_db_cap * 2, sizeof(struct client_entry));
+    client_db_cap *= 2;
   }
 
   struct client_entry newClient;
@@ -119,8 +127,11 @@ int matchTopic(struct client_entry *entry, char *topic) { // TODO - FIX
 }
 
 void run_chat_multi_server(int tcpfd, int udpfd) {
-  struct pollfd poll_fds[MAX_CONNECTIONS];
+  struct pollfd *poll_fds = calloc(STARTING_CONNECTIONS, sizeof(struct pollfd));
+  client_db = calloc(STARTING_CONNECTIONS, sizeof(struct client_entry));
+  client_db_cap = STARTING_CONNECTIONS;
   int num_sockets = 3; // stdin, tcp, udp to begin with
+  int cap_sockets = STARTING_CONNECTIONS;
   const int nagle = 0;
   int rc;
 
@@ -132,7 +143,7 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
   struct tcp_sub client_sub;
 
   // Listen for TCP subscribers
-  rc = listen(tcpfd, MAX_CONNECTIONS);
+  rc = listen(tcpfd, MAX_QUEUE);
   DIE(rc < 0, "Could not listen for TCP.");
 
   // Solely for 'exit'
@@ -158,6 +169,9 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
           close(poll_fds[j].fd);
         }
 
+        free(poll_fds);
+        free(client_db);
+
         return;
       }
     }
@@ -181,6 +195,12 @@ void run_chat_multi_server(int tcpfd, int udpfd) {
         printf("Client %s already connected.\n", client_id.id);
         close(newsockfd);
       } else if (rc == 0) {
+        // make more room for extra sockets
+        if (cap_sockets - 1 == num_sockets) {
+          poll_fds = reallocarray(poll_fds, cap_sockets * 2, sizeof(struct pollfd));
+          cap_sockets *= 2;
+        }
+        
         poll_fds[num_sockets].fd = newsockfd;
         poll_fds[num_sockets].events = POLLIN;
         num_sockets++;
